@@ -1,0 +1,8 @@
+name: binning_base
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - bwa-mem2
+  - coverm==0.7.0

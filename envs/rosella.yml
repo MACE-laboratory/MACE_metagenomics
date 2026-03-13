@@ -1,0 +1,11 @@
+channels:
+  - conda-forge
+  - numba
+  - bioconda
+  - defaults
+  - https://repo.anaconda.com/pkgs/main
+  - https://repo.anaconda.com/pkgs/r
+dependencies:
+  - rosella==0.5.3
+  - numba<=0.57
+  - numpy<=1.24.3

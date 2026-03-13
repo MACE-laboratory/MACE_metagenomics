@@ -1,0 +1,10 @@
+channels:
+  - conda-forge
+  - numba
+  - bioconda
+  - defaults
+dependencies:
+  - biopython
+  - binette
+  - checkm2
+  - gtdbtk

@@ -1,0 +1,7 @@
+channels:
+  - pytorch
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - comebin==1.0.4
