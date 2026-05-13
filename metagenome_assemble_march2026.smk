@@ -8,11 +8,17 @@ SHORT_DIR = f"{OUTDIR}/trimmed_reads/short_reads"
 LONG_DIR = f"{OUTDIR}/trimmed_reads/long_reads"
 ASSEMBLY_DIR = f"{OUTDIR}/assemblies"
 
-ILLUMINA = config["illumina_folder"]
-NANOPORE = config.get("nanopore_folder")
+INPUTS = config["inputs"]
+RESOURCES = config["resources"]
+ASSEMBLY_CONFIG = config["assembly"]
+
+ILLUMINA = INPUTS["illumina_folder"]
+NANOPORE = INPUTS.get("nanopore_folder")
 IS_HYBRID = NANOPORE not in [None, "", "null"]
 
-ASSEMBLY_TYPES = config["assembly_type"]
+ASSEMBLY_TYPES = ASSEMBLY_CONFIG["assembly_type"]
+if isinstance(ASSEMBLY_TYPES, str):
+    ASSEMBLY_TYPES = [ASSEMBLY_TYPES]
 
 ############################################
 # Create directories
@@ -33,10 +39,10 @@ def find_read_files(sample_name, reads_folder):
     """
     r1_file = os.path.join(reads_folder, f"{sample_name}_R1_001.f*q.gz")
     r2_file = os.path.join(reads_folder, f"{sample_name}_R2_001.f*q.gz")
-    
+
     r1_files = sorted(glob.glob(r1_file))
     r2_files = sorted(glob.glob(r2_file))
-    
+
     return r1_files, r2_files
 
 def list_short_reads():
@@ -48,7 +54,6 @@ def list_short_reads():
 def sample_name_from_r1(path):
     """Extract sample name from R1 file path"""
     basename = os.path.basename(path)
-    # Remove everything from _R1_001 onwards
     return basename.split("_R1_001")[0]
 
 def validate_metadata_samples(metadata_file):
@@ -56,54 +61,49 @@ def validate_metadata_samples(metadata_file):
     Validate that all samples in metadata file have corresponding raw read files
     """
     df = pd.read_csv(metadata_file, sep=None, engine="python")
-    
-    # Get available raw samples
+
     raw_samples_list = list_short_reads()
     raw_samples = set(sample_name_from_r1(s) for s in raw_samples_list)
-    
-    # Get samples from metadata
+
     metadata_samples = set(df["Sample"].tolist())
-    
-    # Check for missing samples
+
     missing = metadata_samples - raw_samples
-    
+
     if missing:
         raise ValueError(
             f"The following samples in metadata file '{metadata_file}' do not have "
             f"corresponding raw read files in '{ILLUMINA}':\n{missing}\n\n"
             f"Available samples: {raw_samples}"
         )
-    
-    # Validate that each sample has both R1 and R2 reads
+
     for sample in metadata_samples:
         r1_files, r2_files = find_read_files(sample, ILLUMINA)
-        
+
         if not r1_files:
             raise ValueError(
                 f"Sample '{sample}' from metadata has no R1 read files matching "
                 f"pattern '{sample}_R1_001.f*q.gz' in '{ILLUMINA}'"
             )
-        
+
         if not r2_files:
             raise ValueError(
                 f"Sample '{sample}' from metadata has no R2 read files matching "
                 f"pattern '{sample}_R2_001.f*q.gz' in '{ILLUMINA}'"
             )
-        
+
         if len(r1_files) != len(r2_files):
             raise ValueError(
                 f"Sample '{sample}' has mismatched number of R1 and R2 files:\n"
                 f"  R1 files ({len(r1_files)}): {r1_files}\n"
                 f"  R2 files ({len(r2_files)}): {r2_files}"
             )
-    
+
     return df
 
 SHORT_READS = list_short_reads()
 SAMPLES = sorted(list(set(sample_name_from_r1(r) for r in SHORT_READS)))
 
-# Validate metadata on workflow start
-METADATA_DF = validate_metadata_samples(config["metadata"])
+METADATA_DF = validate_metadata_samples(INPUTS["metadata"])
 
 ############################################
 # Rule: all
@@ -114,7 +114,6 @@ def get_final_outputs(wildcards):
     groups = ck.output.groups
     df = pd.read_csv(groups, sep="\t")
     outputs = df["assembly_path"].tolist()
-    # Add the tools versions file
     outputs.append(f"{ASSEMBLY_DIR}/tools_versions.yaml")
     return outputs
 
@@ -134,7 +133,7 @@ rule trim_galore:
         r1=f"{SHORT_DIR}/{{sample}}_R1_001_val_1.fq.gz",
         r2=f"{SHORT_DIR}/{{sample}}_R2_001_val_2.fq.gz"
     threads:
-        config["trim_galore_threads"]
+        RESOURCES["trim_galore_threads"]
     log:
         "logs/trim_galore_{sample}.log"
     conda:
@@ -158,21 +157,20 @@ rule trim_short_reads_done:
     conda:
         "envs/MACE_metagenomics.yml"
     run:
-        # Verify that all trimmed files exist and are valid
         missing_files = []
         for sample in SAMPLES:
             r1 = f"{SHORT_DIR}/{sample}_R1_001_val_1.fq.gz"
             r2 = f"{SHORT_DIR}/{sample}_R2_001_val_2.fq.gz"
-            
+
             if not os.path.exists(r1) or not os.path.exists(r2):
                 missing_files.append((r1, r2))
-        
+
         if missing_files:
             raise ValueError(
                 f"The following trimmed read files are missing:\n" +
                 "\n".join([f"  {r1}\n  {r2}" for r1, r2 in missing_files])
             )
-        
+
         shell("touch {output}")
 
 ############################################
@@ -185,7 +183,7 @@ rule preprocess_long_reads:
     output:
         f"{LONG_DIR}/{{sample}}_chopped.fastq.gz"
     threads:
-        config["cpus"]
+        RESOURCES["cpus"]
     log:
         "logs/preprocess_long_reads_{sample}.log"
     conda:
@@ -194,12 +192,12 @@ rule preprocess_long_reads:
         inp = input.reads
         out = output[0]
 
-        if config["long_reads_preprocessing"]["porechop"]:
+        if ASSEMBLY_CONFIG["long_reads_preprocessing"]["porechop"]:
             pore = out.replace("_chopped.fastq.gz", "_porechopped.fastq.gz")
             shell(f"porechop --threads {threads} -i {inp} -o {pore} 2>&1 | tee {log}")
             inp = pore
 
-        if config["long_reads_preprocessing"]["chopper"]:
+        if ASSEMBLY_CONFIG["long_reads_preprocessing"]["chopper"]:
             shell(f"gunzip -c {inp} | chopper -q 12 --threads {threads} | gzip > {out} 2>&1 | tee {log}")
         else:
             shell(f"cp {inp} {out}")
@@ -217,20 +215,19 @@ rule trim_long_reads_done:
         "envs/MACE_metagenomics.yml"
     run:
         if IS_HYBRID:
-            # Verify that all long read files exist and are valid
             missing_files = []
             for sample in SAMPLES:
                 long_read = f"{LONG_DIR}/{sample}_chopped.fastq.gz"
-                
+
                 if not os.path.exists(long_read):
                     missing_files.append(long_read)
-            
+
             if missing_files:
                 raise ValueError(
                     f"The following long read files are missing:\n" +
                     "\n".join([f"  {f}" for f in missing_files])
                 )
-        
+
         shell("touch {output}")
 
 ############################################
@@ -239,7 +236,7 @@ rule trim_long_reads_done:
 
 checkpoint parse_metadata:
     input:
-        metadata=config["metadata"]
+        metadata=INPUTS["metadata"]
     output:
         groups=f"{OUTDIR}/assembly_groups.tsv"
     conda:
@@ -309,32 +306,31 @@ rule megahit:
     output:
         contigs=f"{ASSEMBLY_DIR}/{{assembly}}/final.contigs.fa"
     threads:
-        config["cpus"]
+        RESOURCES["cpus"]
     log:
         "logs/megahit_{assembly}.log"
     conda:
         "envs/MACE_metagenomics.yml"
     run:
         samples = get_samples_for_assembly(wildcards.assembly)
-        
-        # Validate that trimmed reads exist for all samples in this assembly
+
         missing_reads = []
         for sample in samples:
             r1 = f"{SHORT_DIR}/{sample}_R1_001_val_1.fq.gz"
             r2 = f"{SHORT_DIR}/{sample}_R2_001_val_2.fq.gz"
-            
+
             if not os.path.exists(r1):
                 missing_reads.append(r1)
             if not os.path.exists(r2):
                 missing_reads.append(r2)
-        
+
         if missing_reads:
             raise ValueError(
                 f"Cannot run megahit for assembly '{wildcards.assembly}'. "
                 f"The following trimmed read files are missing:\n" +
                 "\n".join([f"  {f}" for f in missing_reads])
             )
-        
+
         fwd_files = ",".join([f"{SHORT_DIR}/{s}_R1_001_val_1.fq.gz" for s in samples])
         rev_files = ",".join([f"{SHORT_DIR}/{s}_R2_001_val_2.fq.gz" for s in samples])
         out_dir = f"{ASSEMBLY_DIR}/{wildcards.assembly}"
@@ -353,35 +349,34 @@ rule metaspades_hybrid:
     output:
         contigs=f"{ASSEMBLY_DIR}/{{assembly}}/contigs.fasta"
     threads:
-        config["cpus"]
+        RESOURCES["cpus"]
     log:
         "logs/metaspades_{assembly}.log"
     conda:
         "envs/MACE_metagenomics.yml"
     run:
         samples = get_samples_for_assembly(wildcards.assembly)
-        
-        # Validate that trimmed reads exist for all samples in this assembly
+
         missing_reads = []
         for sample in samples:
             r1 = f"{SHORT_DIR}/{sample}_R1_001_val_1.fq.gz"
             r2 = f"{SHORT_DIR}/{sample}_R2_001_val_2.fq.gz"
             long_r = f"{LONG_DIR}/{sample}_chopped.fastq.gz"
-            
+
             if not os.path.exists(r1):
                 missing_reads.append(r1)
             if not os.path.exists(r2):
                 missing_reads.append(r2)
             if not os.path.exists(long_r):
                 missing_reads.append(long_r)
-        
+
         if missing_reads:
             raise ValueError(
                 f"Cannot run metaspades for assembly '{wildcards.assembly}'. "
                 f"The following trimmed read files are missing:\n" +
                 "\n".join([f"  {f}" for f in missing_reads])
             )
-        
+
         assembly_dir = f"{ASSEMBLY_DIR}/{wildcards.assembly}"
         fwd_files = " ".join([f"{SHORT_DIR}/{s}_R1_001_val_1.fq.gz" for s in samples])
         rev_files = " ".join([f"{SHORT_DIR}/{s}_R2_001_val_2.fq.gz" for s in samples])
@@ -407,42 +402,42 @@ tools_versions:
   trim_galore:
     command: "trim_galore --version"
     description: "Quality control and adapter trimming for reads"
-  
+
   megahit:
     command: "megahit --version"
     description: "Short-read assembly tool"
-  
+
   spades:
     command: "spades.py --version"
     description: "Hybrid assembly tool (MetaSPAdes)"
-  
+
   porechop:
     command: "porechop --version"
     description: "Long-read adapter trimming tool"
     optional: true
-  
+
   chopper:
     command: "chopper --version"
     description: "Long-read quality filtering tool"
     optional: true
 
 version_generation_date: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-execution_command: "snakemake metagenome_assembly_march2026.smk --use-conda"
+execution_command: "snakemake metagenome_assemble_march2026.smk --use-conda --configfile test_set/config.yaml"
 
 EOFHEADER
 
         echo "" >> {output.versions}
         echo "# Actual versions captured at execution time:" >> {output.versions}
         echo "actual_versions:" >> {output.versions}
-        
+
         trim_galore_version=$(trim_galore --version 2>&1 | head -1) && echo "  trim_galore: $trim_galore_version" >> {output.versions} || echo "  trim_galore: version unknown" >> {output.versions}
         megahit_version=$(megahit --version 2>&1 | head -1) && echo "  megahit: $megahit_version" >> {output.versions} || echo "  megahit: version unknown" >> {output.versions}
         spades_version=$(spades.py --version 2>&1 | head -1) && echo "  spades: $spades_version" >> {output.versions} || echo "  spades: version unknown" >> {output.versions}
-        
+
         if command -v porechop &> /dev/null; then
             porechop_version=$(porechop --version 2>&1 | head -1) && echo "  porechop: $porechop_version" >> {output.versions} || echo "  porechop: version unknown" >> {output.versions}
         fi
-        
+
         if command -v chopper &> /dev/null; then
             chopper_version=$(chopper --version 2>&1 | head -1) && echo "  chopper: $chopper_version" >> {output.versions} || echo "  chopper: version unknown" >> {output.versions}
         fi

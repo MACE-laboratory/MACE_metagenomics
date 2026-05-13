@@ -1,0 +1,24 @@
+name: test_set
+outdir: /data/metagenomics/processed_data/test_set
+
+inputs:
+  illumina_folder: /data/metagenomics/raw_data/test_data
+  nanopore_folder: null
+  metadata: /data/metagenomics/raw_data/test_data/test_metadata.csv
+
+resources:
+  cpus: 64
+  threads: 64
+  trim_galore_threads: 8
+
+assembly:
+  assembly_type:
+    - sub
+  long_reads_preprocessing:
+    porechop: true
+    chopper: true
+
+binning:
+  short_reads_folder: /data/metagenomics/processed_data/test_set/trimmed_reads/short_reads
+  suffixes:
+    - sub_assembly_Group1

@@ -1,56 +1,72 @@
 import os
 import glob
+import pandas as pd
 
-# Configuration
-assembly_path = config["assembly_path"]
-assembly, fasta_ext = os.path.splitext(assembly_path)
-assembly_renamed_filtered = assembly + '.renamed.filtered.fa'
-outdir = config["outdir"]
-suffix = config["suffix"]
-threads_n = config["threads"]
-short_reads_folder = config["short_reads_folder"]
+OUTDIR = config["outdir"]
+RESOURCES = config["resources"]
+BINNING_CONFIG = config["binning"]
+
+threads_n = RESOURCES["threads"]
+short_reads_folder = BINNING_CONFIG.get(
+    "short_reads_folder",
+    f"{OUTDIR}/trimmed_reads/short_reads"
+)
+
+if "suffixes" in BINNING_CONFIG and BINNING_CONFIG["suffixes"]:
+    suffixes = BINNING_CONFIG["suffixes"]
+else:
+    groups = pd.read_csv(f"{OUTDIR}/assembly_groups.tsv", sep="\t", dtype=str)
+    suffixes = groups["assembly"].tolist()
 
 fastq_files = glob.glob(f"{short_reads_folder}/*R1_001_val_1.fq.gz")
-samples = [f.split("/")[-1].replace("_R1_001_val_1.fq.gz", "") for f in fastq_files]
-print(samples)
+samples = [os.path.basename(f).replace("_R1_001_val_1.fq.gz", "") for f in fastq_files]
 
+def get_assembly(wildcards):
+    return f"{OUTDIR}/assemblies/{wildcards.suffix}/prokaryotic_contigs.fasta"
 
-def get_bam_file_paths(wildcards):
-    checkpoint_output = checkpoints.run_coverm.get(**wildcards).output[1]
-    # Construct specific BAM path based on wildcards.sample
-    return os.path.join(checkpoint_output, f"{os.path.basename(assembly_path)}.{wildcards.sample}_R1_001_val_1.fq.gz.bam")
-
+def get_bam_file_path(wildcards):
+    checkpoint_output = checkpoints.run_coverm.get(suffix=wildcards.suffix).output.bam_files
+    assembly_name = "prokaryotic_contigs.renamed.filtered.fa"
+    bam_filename = f"{assembly_name}.{wildcards.sample}_R1_001_val_1.fq.gz.bam"
+    return os.path.join(checkpoint_output, bam_filename)
 
 rule all:
     input:
-        #f"{outdir}/binning/{suffix}/maxbin2/maxbin2_run.summary",
-        #f"{outdir}/binning/{suffix}/metabat2/bins_metabat/bins_metabat.1.fa",
-        #f"{outdir}/binning/{suffix}/rosella/rosella_bin_1.fna",
-        f"{outdir}/binning/{suffix}/binette/final_bins_quality_reports.tsv"
+        expand(
+            f"{OUTDIR}/binning/{{suffix}}/binette/final_bins_quality_reports.tsv",
+            suffix=suffixes
+        )
 
-rule create_binning_folder: 
+rule create_binning_folder:
     output:
-        directory(f"{outdir}/binning/{suffix}")
-    conda:
-        f"envs/binning_base.yml"
+        done = touch(f"{OUTDIR}/binning/{{suffix}}/.binning_folder.done")
     shell:
-        "mkdir -p {output} {output}/coverm {output}/maxbin2 {output}/semibin2 {output}/metabat2 {output}/rosella {output}/binette"
+        """
+        mkdir -p {OUTDIR}/binning/{{wildcards.suffix}}
+        mkdir -p {OUTDIR}/binning/{{wildcards.suffix}}/coverm
+        mkdir -p {OUTDIR}/binning/{{wildcards.suffix}}/maxbin2
+        mkdir -p {OUTDIR}/binning/{{wildcards.suffix}}/semibin2
+        mkdir -p {OUTDIR}/binning/{{wildcards.suffix}}/metabat2
+        mkdir -p {OUTDIR}/binning/{{wildcards.suffix}}/binette
+        mkdir -p {OUTDIR}/binning/{{wildcards.suffix}}/comebin
+        touch {output.done}
+        """
 
 rule filter_contigs:
     input:
-        f"{assembly_path}"
+        get_assembly
     output:
-        f"{assembly}.filtered.fa"
+        f"{OUTDIR}/assemblies/{{suffix}}/prokaryotic_contigs.filtered.fa"
     conda:
         "envs/binning_base.yml"
     shell:
-        "seqkit seq -j 10 --remove-gaps -o {output} -m 1500 {input}"
+        "seqkit seq -j 10 --remove-gaps -m 1500 {input} > {output}"
 
 rule rename_contigs:
     input:
-        f"{assembly}.filtered.fa"    
+        f"{OUTDIR}/assemblies/{{suffix}}/prokaryotic_contigs.filtered.fa"
     output:
-        f"{assembly}.renamed.filtered.fa"
+        f"{OUTDIR}/assemblies/{{suffix}}/prokaryotic_contigs.renamed.filtered.fa"
     conda:
         "envs/binning_base.yml"
     shell:
@@ -58,122 +74,133 @@ rule rename_contigs:
 
 checkpoint run_coverm:
     input:
-        assembly=f'{assembly}.renamed.filtered.fa'
+        assembly = f"{OUTDIR}/assemblies/{{suffix}}/prokaryotic_contigs.renamed.filtered.fa",
+        binning_folders = f"{OUTDIR}/binning/{{suffix}}/.binning_folder.done"
     output:
-        coverm_metabat=f"{outdir}/binning/{suffix}/coverm/coverm_metabat.tsv", 
-        bam_files=directory(f"{outdir}/binning/{suffix}/coverm/bam_files/bam")
+        coverm_metabat = f"{OUTDIR}/binning/{{suffix}}/coverm/coverm_metabat.tsv",
+        bam_files = directory(f"{OUTDIR}/binning/{{suffix}}/coverm/bam_files/bam")
     conda:
         "envs/coverm.yml"
     threads: threads_n
     shell:
-        f"coverm contig -p bwa-mem2 -r {input.assembly} -m metabat -t {threads_n} -1 {short_reads_folder}/*val_1.fq.gz -2 {short_reads_folder}/*val_2.fq.gz -o {output.coverm_metabat} --bam-file-cache-directory {output.bam_files} --discard-unmapped"
+        """
+        coverm contig \
+        -p bwa-mem2 \
+        -r {input.assembly} \
+        -m metabat \
+        -t {threads} \
+        -1 {short_reads_folder}/*val_1.fq.gz \
+        -2 {short_reads_folder}/*val_2.fq.gz \
+        -o {output.coverm_metabat} \
+        --bam-file-cache-directory {output.bam_files}
+        """
 
 rule coverage_maxbin:
     input:
-        bam = get_bam_file_paths
+        bam=get_bam_file_path,
+        binning_folders = f"{OUTDIR}/binning/{{suffix}}/.binning_folder.done"
     output:
-        f"{outdir}/binning/{suffix}/coverm/bam_files/trimmed_means/{{sample}}.trimmed_mean"
+        f"{OUTDIR}/binning/{{suffix}}/coverm/bam_files/trimmed_means/{{sample}}.trimmed_mean"
     conda:
         "envs/coverm.yml"
     threads: threads_n
     shell:
-        "coverm contig -t {threads} -m trimmed_mean -b {input.bam} > {output}" 
+        "coverm contig -t {threads} -m trimmed_mean -b {input.bam} > {output}"
 
 rule list_trimmed_files:
     input:
-        expand(f"{outdir}/binning/{suffix}/coverm/bam_files/trimmed_means/{{sample}}.trimmed_mean", sample=samples)
+        lambda wildcards: expand(
+            f"{OUTDIR}/binning/{{suffix}}/coverm/bam_files/trimmed_means/{{sample}}.trimmed_mean",
+            sample=samples,
+            suffix=wildcards.suffix
+        )
     output:
-        f"{outdir}/binning/{suffix}/coverm/trimmed_files_list.txt"
+        f"{OUTDIR}/binning/{{suffix}}/coverm/trimmed_files_list.txt"
     shell:
-        "printf '%s\n' {input} > {output}"
+        "printf '%s\\n' {input} > {output}"
 
 rule run_maxbin2:
     input:
-        assembly=f'{assembly}.renamed.filtered.fa',
-        coverm=f"{outdir}/binning/{suffix}/coverm/trimmed_files_list.txt"
+        assembly = f"{OUTDIR}/assemblies/{{suffix}}/prokaryotic_contigs.renamed.filtered.fa",
+        coverm = f"{OUTDIR}/binning/{{suffix}}/coverm/trimmed_files_list.txt"
     output:
-        f"{outdir}/binning/{{suffix}}/maxbin2/maxbin2_run.summary"
+        f"{OUTDIR}/binning/{{suffix}}/maxbin2/maxbin2_run.summary"
     params:
-        out_prefix=lambda wildcards: f"{outdir}/binning/{wildcards.suffix}/maxbin2/maxbin2_run"
+        out_prefix = f"{OUTDIR}/binning/{{suffix}}/maxbin2/maxbin2_run"
     conda:
         "envs/maxbin2.yml"
     threads: threads_n
     shell:
         "run_MaxBin.pl -contig {input.assembly} -abund_list {input.coverm} -out {params.out_prefix} -min_contig_length 1500 -thread {threads}"
 
-rule run_rosella:
-    input:
-        assembly=f'{assembly}.renamed.filtered.fa',
-        coverm=f'{outdir}/binning/{suffix}/coverm/coverm_metabat.tsv'
-    params:
-        outdir=directory(f"{outdir}/binning/{suffix}/rosella")
-    output:
-        f"{outdir}/binning/{suffix}/rosella/rosella_bin_unbinned.fna"
-    conda:
-        "envs/rosella.yml"
-    threads: threads_n
-    shell:
-        f"rosella recover -C {input.coverm} -r {input.assembly} --output-directory {params.outdir} --threads {threads}"
-
-rule create_rosella_dir:
-    input:
-        f"{outdir}/binning/{suffix}/rosella/rosella_bin_unbinned.fna"
-    params:
-        out_dir=f"{outdir}/binning/{suffix}/rosella/rosella_bins",
-        to_copy=f"{outdir}/binning/{suffix}/rosella/*.fna"
-    output:
-        directory(f"{outdir}/binning/{suffix}/rosella/rosella_bins/"),
-        touch(f"{outdir}/binning/{suffix}/rosella/rosella_bins/.done")
-    shell:
-        "cp {params.to_copy} {params.out_dir}/. && rm {params.out_dir}/*unbinned*.fna"
-
 rule gzip_assembly:
     input:
-        assembly=f'{assembly}.renamed.filtered.fa'
+        f"{OUTDIR}/assemblies/{{suffix}}/prokaryotic_contigs.renamed.filtered.fa"
     output:
-        assembly=f'{assembly}.renamed.filtered.fa.gz'
+        f"{OUTDIR}/assemblies/{{suffix}}/prokaryotic_contigs.renamed.filtered.fa.gz"
     shell:
-        "gzip -c {input.assembly} > {output}"
+        "gzip -c {input} > {output}"
 
 rule run_metabat2:
     input:
-        assembly=f'{assembly}.renamed.filtered.fa.gz',
-        rosella_done=f"{outdir}/binning/{suffix}/rosella/rosella_bins/.done"
+        assembly = f"{OUTDIR}/assemblies/{{suffix}}/prokaryotic_contigs.renamed.filtered.fa.gz",
+        coverm = f"{OUTDIR}/binning/{{suffix}}/coverm/coverm_metabat.tsv"
     params:
-        out_path=f"{outdir}/binning/{suffix}/metabat2/bins_metabat"
+        out_path = f"{OUTDIR}/binning/{{suffix}}/metabat2/bins_metabat"
     output:
-        f"{outdir}/binning/{suffix}/metabat2/bins_metabat.1.fa"
+        f"{OUTDIR}/binning/{{suffix}}/metabat2/bins_metabat.1.fa"
     conda:
         "envs/metabat2.yml"
     threads: threads_n
     shell:
-        f"metabat2 -i {input.assembly} -o {params.out_path} -a {outdir}/binning/{{suffix}}/coverm/coverm_metabat.tsv -t {threads_n} --minContig 1500 --seed 23"
+        "metabat2 -i {input.assembly} -o {params.out_path} -a {input.coverm} -t {threads} --minContig 1500 --seed 23"
 
 rule rename_metabat2:
     input:
-        f"{outdir}/binning/{suffix}/metabat2/bins_metabat.1.fa"
+        f"{OUTDIR}/binning/{{suffix}}/metabat2/bins_metabat.1.fa"
     params:
-        dir=f"{outdir}/binning/{suffix}/metabat2/"
+        dir = f"{OUTDIR}/binning/{{suffix}}/metabat2/"
     output:
-        f"{outdir}/binning/{suffix}/metabat2/bins_metabat_1.fa"
+        f"{OUTDIR}/binning/{{suffix}}/metabat2/bins_metabat_1.fa"
     shell:
-        "rename 's/bins_metabat\\./bins_metabat_/g' {params.dir}*.fa"
+        "cp {input} {output} && rename 's/bins_metabat\\./bins_metabat_/g' {params.dir}*.fa"
+
+rule run_comebin:
+    input:
+        assembly = f"{OUTDIR}/assemblies/{{suffix}}/prokaryotic_contigs.renamed.filtered.fa",
+        bam_dir = f"{OUTDIR}/binning/{{suffix}}/coverm/bam_files/bam"
+    output:
+        f"{OUTDIR}/binning/{{suffix}}/comebin/comebin_res/comebin_res.tsv"
+    params:
+        outdir = f"{OUTDIR}/binning/{{suffix}}/comebin"
+    conda:
+        "envs/comebin.yml"
+    threads: threads_n
+    shell:
+        "CUDA_VISIBLE_DEVICES='' && run_comebin.sh -a {input.assembly} -o {params.outdir} -p {input.bam_dir} -t {threads}"
 
 rule run_binette:
     input:
-        rosella=f"{outdir}/binning/{suffix}/rosella/rosella_bins/.done",
-        maxbin2=f"{outdir}/binning/{suffix}/maxbin2/maxbin2_run.summary",
-        metabat2=f"{outdir}/binning/{suffix}/metabat2/bins_metabat_1.fa",
-        assembly=f"{assembly}.renamed.filtered.fa"
+        assembly = f"{OUTDIR}/assemblies/{{suffix}}/prokaryotic_contigs.renamed.filtered.fa",
+        maxbin2 = f"{OUTDIR}/binning/{{suffix}}/maxbin2/maxbin2_run.summary",
+        metabat2 = f"{OUTDIR}/binning/{{suffix}}/metabat2/bins_metabat_1.fa",
+        comebin = f"{OUTDIR}/binning/{{suffix}}/comebin/comebin_res/comebin_res.tsv"
     params:
-        rosella=f"{outdir}/binning/{suffix}/rosella/rosella_bins",
-        metabat2=f"{outdir}/binning/{suffix}/metabat2",
-        maxbin2=f"{outdir}/binning/{suffix}/maxbin2",
-        out_prefix=f"{outdir}/binning/{suffix}/binette"
+        metabat2 = f"{OUTDIR}/binning/{{suffix}}/metabat2",
+        maxbin2 = f"{OUTDIR}/binning/{{suffix}}/maxbin2",
+        comebin = f"{OUTDIR}/binning/{{suffix}}/comebin/comebin_res/comebin_res_bins",
+        out_prefix = f"{OUTDIR}/binning/{{suffix}}/binette"
     output:
-        f"{outdir}/binning/{suffix}/binette/final_bins_quality_reports.tsv"
+        f"{OUTDIR}/binning/{{suffix}}/binette/final_bins_quality_reports.tsv"
     threads: threads_n
     conda:
         "envs/binette.yml"
     shell:
-        f"export CHECKM2DB='/data/databases/checkm2/CheckM2_database/uniref100.KO.1.dmnd' && binette --verbose --bin_dirs {params.rosella} {params.metabat2} {params.maxbin2} -c {input.assembly} -t {threads_n} -o {params.out_prefix}"
+        """
+        export CHECKM2DB='/data/databases/checkm2/CheckM2_database/uniref100.KO.1.dmnd'
+        binette --verbose \
+        --bin_dirs {params.metabat2} {params.maxbin2} {params.comebin} \
+        -c {input.assembly} \
+        -t {threads} \
+        -o {params.out_prefix}
+        """
