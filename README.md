@@ -1,36 +1,41 @@
-# MACE Metagenomics: Snakemake Workflows
+# MACE metagenomics pipeline
 
-Welcome to the MACE Metagenomics repository.
-This project provides modular, scalable, and reproducible Snakemake workflows for metagenomic assembly, classification, binning, and downstream summarisation.
+This repository contains Snakemake workflows for metagenomic assembly, contig classification, binning, and metagenome summarisation.
 
-The workflow has now been simplified to use **one shared config file per dataset/run**.
-For example, the test dataset now uses:
+## Workflows
 
-`test_set/config.yaml`
+- `metagenome_assemble.smk`: trims reads with Trim Galore and assembles contigs with MEGAHIT, or MetaSPAdes for hybrid assemblies.
+- `metagenome_classify.smk`: separates eukaryotic/prokaryotic/other contigs and carries prokaryotic contigs forward.
+- `metagenome_binning.smk`: bins prokaryotic contigs using MetaBAT2, COMEbin, and MaxBin2, then combines/optimizes bins with Binette.
+- `summarise_metagenome.smk`: produces contig abundance summaries using CoverM `trimmed_mean` across samples for each assembly and functional annotation using eggNOG-mapper.
+- `summarise_mags.smk`: MAG-level summary workflow (CheckM2 completeness/contamination, Galah dereplication, Bakta annotation, MAG abundance across all samples from assemblies listed in `suffixes`, and GTDB-Tk taxonomy).
 
----
+## Assembly modes
 
-## 📂 Available Workflows
+Set in `assembly.assembly_type`:
 
-| Workflow | Purpose |
-|---|---|
-| `metagenome_assemble_march2026.smk` | Metagenome assembly from short and optional long reads |
-| `metagenome_classify_march2026.smk` | Contig classification into prokaryotic / eukaryotic / other |
-| `metagenome_binning_march2026.smk` | Genome binning from classified prokaryotic contigs |
-| `summarise_metagenome_v01.smk` | Functional and coverage summarisation of classified assemblies |
-| `summarise_bins.smk` | Coming soon: dereplication, taxonomy, quality, and metabolic profiling of bins |
+- `co`: all reads together
+- `sub`: subgroup co-assemblies based on metadata
+- `single`: per-sample assemblies
 
-All workflows are intended to run with the same unified config file.
+## Hardcoded settings
 
----
+- MEGAHIT currently uses the `meta-large` preset (soil-focused default in this pipeline).
+- Galah dereplication is currently hardcoded at 99% ANI (strain-level).
 
-## ⚙️ One-config workflow
+These are currently hardcoded and can be made configurable in future updates.
 
-The pipeline now uses a single YAML config with shared settings plus step-specific sections.
+## Config
 
-### Example unified config
+The workflows use one merged config file (`test_set/config.yaml`) with shared sections (`inputs`, `resources`, `assembly`, `binning`).
 
-````yaml name=test_set/config.yaml url=https://github.com/MACE-laboratory/MACE_metagenomics/blob/v01_dev/test_set/config.yaml
+`binning.short_reads_folder` is no longer required in config; workflows derive it from:
+
+- `{outdir}/trimmed_reads/short_reads`
+
+### Example merged config
+
+```yaml
 name: test_set
 outdir: /data/metagenomics/processed_data/test_set
 
@@ -40,7 +45,6 @@ inputs:
   metadata: /data/metagenomics/raw_data/test_data/test_metadata.csv
 
 resources:
-  cpus: 64
   threads: 64
   trim_galore_threads: 8
 
@@ -52,237 +56,25 @@ assembly:
     chopper: true
 
 binning:
-  short_reads_folder: /data/metagenomics/processed_data/test_set/trimmed_reads/short_reads
   suffixes:
     - sub_assembly_Group1
-````
-
-### Config structure
-
-| Section | Purpose |
-|---|---|
-| `name` | Name of the run or dataset |
-| `outdir` | Base output directory for all steps |
-| `inputs` | Input data locations such as Illumina, Nanopore, and metadata |
-| `resources` | Shared CPU/thread settings |
-| `assembly` | Assembly-specific parameters |
-| `binning` | Binning-specific parameters |
-
-### Notes
-
-- `inputs.nanopore_folder: null` means short-read-only assembly.
-- `assembly.assembly_type` can contain one or more of:
-  - `co`
-  - `sub`
-  - `single`
-- `binning.suffixes` can be set explicitly, or the workflow can infer assemblies from `assembly_groups.tsv`.
-
----
-
-## 🔬 Workflow tutorial: run the full pipeline
-
-This section describes the recommended order for running the whole metagenomics workflow:
-
-1. assembly
-2. classify
-3. binning
-4. summarise
-5. summarise bins (coming soon)
-
-In all examples below, the same config file is used:
-
-```bash name=commands_config.sh
-CONFIG=test_set/config.yaml
 ```
 
-### 1. Assembly
+## Run order
 
-**Workflow:** `metagenome_assemble_march2026.smk`
-
-This step:
-- validates metadata against the raw read files
-- trims Illumina reads
-- optionally preprocesses Nanopore reads
-- creates co-assembly, subgroup assembly, and/or single-sample assembly outputs depending on config
-- writes `assembly_groups.tsv`
-
-#### Dry run
-```bash name=assembly_dry_run.sh
-snakemake -s metagenome_assemble_march2026.smk --use-conda --configfile test_set/config.yaml -n
+```bash
+snakemake -s metagenome_assemble.smk --use-conda --configfile test_set/config.yaml -j 64
+snakemake -s metagenome_classify.smk --use-conda --configfile test_set/config.yaml -j 64
+snakemake -s metagenome_binning.smk --use-conda --configfile test_set/config.yaml -j 64
+snakemake -s summarise_metagenome.smk --use-conda --configfile test_set/config.yaml -j 64
 ```
 
-#### Run
-```bash name=assembly_run.sh
-snakemake -s metagenome_assemble_march2026.smk --use-conda --configfile test_set/config.yaml -j 64
-```
+## Conda environments
 
-#### Main outputs
-- `{outdir}/assemblies/`
-- `{outdir}/assembly_groups.tsv`
-- `{outdir}/trimmed_reads/`
-- `{outdir}/assemblies/tools_versions.yaml`
+Workflows use YAML-backed envs under `envs/`, including:
 
----
-
-### 2. Contig classification
-
-**Workflow:** `metagenome_classify_march2026.smk`
-
-This step:
-- uses assembly outputs from the previous step
-- classifies contigs with Tiara / WhoKaryote-related logic in the workflow
-- splits assemblies into:
-  - `prokaryotic_contigs.fasta`
-  - `eukaryotic_contigs.fasta`
-  - `other_contigs.fasta`
-
-#### Dry run
-```bash name=classify_dry_run.sh
-snakemake -s metagenome_classify_march2026.smk --use-conda --configfile test_set/config.yaml -n
-```
-
-#### Run
-```bash name=classify_run.sh
-snakemake -s metagenome_classify_march2026.smk --use-conda --configfile test_set/config.yaml -j 64
-```
-
-#### Important
-This workflow expects `assembly_groups.tsv` and assembly outputs to already exist, so run assembly first.
-
----
-
-### 3. Genome binning
-
-**Workflow:** `metagenome_binning_march2026.smk`
-
-This step:
-- filters and renames prokaryotic contigs
-- computes coverage with CoverM
-- runs multiple binning tools
-- consolidates bins with Binette
-
-#### Dry run
-```bash name=binning_dry_run.sh
-snakemake -s metagenome_binning_march2026.smk --use-conda --configfile test_set/config.yaml -n
-```
-
-#### Run
-```bash name=binning_run.sh
-snakemake -s metagenome_binning_march2026.smk --use-conda --configfile test_set/config.yaml -j 64
-```
-
-#### Important
-This workflow expects classified prokaryotic contigs to already exist, so run classify first.
-
----
-
-### 4. Metagenome summarisation
-
-**Workflow:** `summarise_metagenome_v01.smk`
-
-This step currently:
-- runs eggNOG annotation on prokaryotic contigs
-- calculates multi-sample coverage summaries with CoverM
-
-#### Dry run
-```bash name=summarise_dry_run.sh
-snakemake -s summarise_metagenome_v01.smk --use-conda --configfile test_set/config.yaml -n
-```
-
-#### Run
-```bash name=summarise_run.sh
-snakemake -s summarise_metagenome_v01.smk --use-conda --configfile test_set/config.yaml -j 64
-```
-
-#### Important
-This workflow expects renamed prokaryotic contigs and assembly groups from earlier steps.
-
----
-
-### 5. Bin summarisation (coming soon)
-
-**Planned workflow:** `summarise_bins.smk`
-
-This upcoming workflow will operate on recovered bins and is planned to include:
-- dereplication using **Galah**
-- taxonomy assignment with **GTDB-Tk**
-- completeness / contamination estimation with **CheckM2**
-- functional profiling with **METABOLIC-G**
-
-Planned purpose:
-- take binning outputs
-- refine the MAG catalog
-- annotate taxonomy, quality, and metabolic potential
-
-This will become the recommended downstream step after `metagenome_binning_march2026.smk`.
-
----
-
-## 🚀 Recommended full run order
-
-```bash name=full_pipeline_tutorial.sh
-snakemake -s metagenome_assemble_march2026.smk --use-conda --configfile test_set/config.yaml -j 64
-snakemake -s metagenome_classify_march2026.smk --use-conda --configfile test_set/config.yaml -j 64
-snakemake -s metagenome_binning_march2026.smk --use-conda --configfile test_set/config.yaml -j 64
-snakemake -s summarise_metagenome_v01.smk --use-conda --configfile test_set/config.yaml -j 64
-```
-
-When `summarise_bins.smk` is added, it will be the next downstream step after binning.
-
----
-
-## 📁 Example repository structure
-
-```text name=repo_structure.txt
-MACE_metagenomics/
-├── README.md
-├── metagenome_assemble_march2026.smk
-├── metagenome_classify_march2026.smk
-├── metagenome_binning_march2026.smk
-├── summarise_metagenome_v01.smk
-├── summarise_bins.smk                 # planned
-├── envs/
-│   ├── MACE_metagenomics.yml
-│   ├── binette.yml
-│   ├── binning_base.yml
-│   ├── comebin.yml
-│   ├── coverm.yml
-│   ├── maxbin2.yml
-│   ├── metabat2.yml
-│   ├── semibin2.yml
-│   ├── whokaryote.yml
-│   └── ...
-└── test_set/
-    └── config.yaml
-```
-
----
-
-## 🧷 Practical notes
-
-- Always use `--use-conda` unless you are managing environments yourself.
-- Use absolute paths in config files when running on a server.
-- A dry run with `-n` is strongly recommended before launching a full execution.
-- If classify, binning, or summarise fail at parse time, check whether the upstream outputs already exist.
-- Logs are written by individual rules and are the first place to inspect failures.
-
----
-
-## 🛠️ Troubleshooting
-
-- **Missing samples in metadata:** ensure the `Sample` column matches the Illumina file names.
-- **Classification step fails early:** confirm that assembly has already produced `assembly_groups.tsv`.
-- **Binning step cannot find prokaryotic contigs:** confirm that classification completed successfully.
-- **Coverage-related errors:** check that the trimmed short reads exist in the configured `binning.short_reads_folder`.
-- **Environment issues:** verify that the env YAML file referenced by each rule exists and can be solved by conda/mamba.
-
----
-
-## 📣 Getting help
-
-- Open a [GitHub issue](https://github.com/MACE-laboratory/MACE_metagenomics/issues) for bugs or feature requests.
-- Check the workflow files directly for parameter expectations and output naming.
-
----
-
-Happy assembling, classifying, binning, and summarising!
+- `envs/comebin.yml`
+- `envs/checkm2.yml`
+- `envs/gtdbtk-2.7.2.yml`
+- `envs/bakta.yml`
+- `envs/eggnog_blast.yml`

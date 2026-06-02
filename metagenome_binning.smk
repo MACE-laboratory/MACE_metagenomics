@@ -7,10 +7,7 @@ RESOURCES = config["resources"]
 BINNING_CONFIG = config["binning"]
 
 threads_n = RESOURCES["threads"]
-short_reads_folder = BINNING_CONFIG.get(
-    "short_reads_folder",
-    f"{OUTDIR}/trimmed_reads/short_reads"
-)
+short_reads_folder = f"{OUTDIR}/trimmed_reads/short_reads"
 
 if "suffixes" in BINNING_CONFIG and BINNING_CONFIG["suffixes"]:
     suffixes = BINNING_CONFIG["suffixes"]

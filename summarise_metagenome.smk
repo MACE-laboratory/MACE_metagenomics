@@ -5,10 +5,7 @@ RESOURCES = config["resources"]
 BINNING_CONFIG = config["binning"]
 
 threads_n = RESOURCES["threads"]
-short_reads_folder = BINNING_CONFIG.get(
-    "short_reads_folder",
-    f"{OUTDIR}/trimmed_reads/short_reads"
-)
+short_reads_folder = f"{OUTDIR}/trimmed_reads/short_reads"
 
 groups = pd.read_csv(f"{OUTDIR}/assembly_groups.tsv", sep="\t", dtype=str)
 suffixes = groups["assembly"].tolist()
@@ -28,7 +25,7 @@ rule eggnog_mapper:
     output:
         ann = f"{OUTDIR}/assemblies/{{suffix}}/genes/eggnog/{{suffix}}_prokaryotic_genes.emapper.annotations"
     conda:
-        "eggnog_blast"
+        "envs/eggnog_blast.yml"
     threads: threads_n
     shell:
         """

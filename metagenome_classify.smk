@@ -8,7 +8,7 @@ import pandas as pd
 
 OUTDIR = config["outdir"]
 RESOURCES = config["resources"]
-CPUS = RESOURCES["cpus"]
+THREADS = RESOURCES["threads"]
 ASSEMBLIES_DIR = os.path.join(OUTDIR, "assemblies")
 GROUPS_TSV = os.path.join(OUTDIR, "assembly_groups.tsv")
 
@@ -39,7 +39,7 @@ rule run_whokaryote:
     params:
         minsize = 1000
     threads:
-        CPUS
+        THREADS
     conda:
         "envs/whokaryote.yml"
     log:
@@ -56,7 +56,7 @@ rule run_tiara:
     params:
         minsize = 1000
     threads:
-        CPUS
+        THREADS
     conda:
         "envs/whokaryote.yml"
     log:
@@ -140,5 +140,5 @@ rule tools_version_log:
             log.write("=================================\n")
             for assembly in ASSEMBLIES:
                 contigs = CONTIGS_DICT[assembly]
-                cmd = f"tiara -i {contigs} -o output -t {CPUS}"
+                cmd = f"tiara -i {contigs} -o output -t {THREADS}"
                 log.write(cmd + "\n")
