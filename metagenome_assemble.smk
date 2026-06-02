@@ -422,7 +422,7 @@ tools_versions:
     optional: true
 
 version_generation_date: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-execution_command: "snakemake metagenome_assemble.smk --use-conda --configfile test_set/config.yaml"
+execution_command: "snakemake metagenome_assemble.smk --use-conda --configfile path/to/config.yaml"
 
 EOFHEADER
 
