@@ -107,7 +107,7 @@ rule all:
         MAGS_QUALITY_REPORT,
         GTDBTK_DONE,
         COVERM_TSV,
-#        BAKTA_DONE,        
+        BAKTA_DONE,        
 #EMAPPER_DONE,
 
 
@@ -438,17 +438,16 @@ rule bakta:
     output:
         annot=os.path.join(BAKTA_DIR, "results", "{base}", "{base}.tsv"),
     params:
-        outdir=lambda wildcards: os.path.join(BAKTA_DIR, "results", wildcards.base),
+        outdir=lambda wildcards: os.path.join(BAKTA_DIR, wildcards.base),
         prefix=lambda wildcards: wildcards.base,
         gz=lambda wildcards: os.path.join(BAKTA_DIR, "gzipped_fastas", wildcards.base, f"{wildcards.base}.fa.gz"),
     threads: 8
     conda:
-        "bakta"
+        "envs/bakta.yml"
     log:
         os.path.join(OUTDIR, "logs", "bakta", "bakta_{base}.log")
     shell:
         """
-        mkdir -p {params.outdir}
         mkdir -p $(dirname {params.gz})
 
         # gzip input fasta for Bakta
