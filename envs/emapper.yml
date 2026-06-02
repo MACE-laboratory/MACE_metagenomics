@@ -3,3 +3,7 @@ channels:
   - conda-forge
 dependencies:
   - eggnog-mapper==2.1.12
+  - diamond==2.1.10
+  - hmmer==3.4
+  - mmseqs2==13.45111
+  - prodigal==2.6.3
