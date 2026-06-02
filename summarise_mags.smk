@@ -1,8 +1,6 @@
 import os
 import glob
 
-configfile: "config.yaml"
-
 OUTDIR = config["outdir"]
 SUFFIXES = config["suffixes"]
 
