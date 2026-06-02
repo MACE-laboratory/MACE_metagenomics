@@ -1,178 +1,275 @@
-# MACE Metagenomics: Snakemake Workflows
+# MACE Metagenomics: Snakemake workflows for metagenomic assembly, classification, binning, and MAG summarisation
 
-Welcome to the MACE Metagenomics repository!  
-This project provides modular, scalable, and reproducible Snakemake workflows for metagenomic assembly, classification, and binning.
+This repository contains a modular Snakemake-based pipeline for metagenomic assembly, contig classification, genome binning, and downstream summarisation of both metagenomes and MAGs.
 
-Workflows are designed for flexibility and ease-of-use, and each integrates conda environments for reproducibility.
+The pipeline is designed around soil metagenomes and supports:
+- **co-assembly** of all reads together
+- **sub-co-assembly** of groups of samples
+- **single-sample assembly**
 
----
-
-## 📂 Available Workflows
-
-| Workflow                                   | Purpose                                   |
-|---------------------------------------------|-------------------------------------------|
-| `metagenome_assemble_march2026.smk`        | Metagenome assembly from short/long reads |
-| `metagenome_classify_march2026.smk`        | Eukaryote/prokaryote contig classification|
-| `metagenome_binning_march2026.smk`         | Genome binning from metagenome assemblies |
-
-All workflows use configs and environment YAMLs, making them modular and maintainable.
+The main workflow files in this branch are:
+- `metagenome_assemble.smk`
+- `metagenome_classify.smk`
+- `metagenome_binning.smk`
+- `summarise_metagenome.smk`
+- `summarise_mags.smk`
 
 ---
 
-## 🔬 1. Metagenomic Assembly
+## Overview
 
-**File:** `metagenome_assemble_march2026.smk`  
-**Purpose:** Performs (optionally hybrid) assembly of metagenomic data from short (Illumina) and/or long (Nanopore) reads using MEGAHIT, MetaSPAdes, and others.  
-**Inputs:**  
-- Illumina FASTQ reads in a specified folder  
-- (Optional) Nanopore FASTQ reads in a folder  
-- Metadata table  
-- Config YAML
+### 1. Assembly: `metagenome_assemble.smk`
+This workflow performs metagenomic assembly starting from short reads and, optionally, long reads for hybrid assemblies.
 
-**Output:**  
-- Assembled contigs in output directory  
-- Summary reports (QUAST, CheckM, etc.)
+In brief:
+1. Short reads are trimmed with **trim_galore**
+2. If long reads are provided, they can be preprocessed with **porechop** and/or **chopper**
+3. Reads are assembled into contigs using:
+   - **MEGAHIT** for short-read assemblies
+   - **MetaSPAdes** for hybrid assemblies
 
-**Example config (`config_assemble.yml`):**
+The short reads are expected to be FASTQ files in the input short-read folder, using sample naming compatible with:
+- `*_R1_001.f*q.gz`
+- `*_R2_001.f*q.gz`
+
+Assembly can be run in three modes:
+- `co`: all reads assembled together into one co-assembly
+- `sub`: reads assembled into several grouped sub-co-assemblies based on the metadata `Group` column
+- `single`: each sample assembled independently
+
+### 2. Contig classification: `metagenome_classify.smk`
+This workflow separates contigs into **prokaryotic**, **eukaryotic**, and **other** categories.
+
+It is used to focus downstream binning on the **prokaryotic contigs**.
+
+At present this workflow uses:
+- **WhoKaryote**
+- **Tiara**
+
+The key downstream output is:
+- `prokaryotic_contigs.fasta`
+
+### 3. Binning: `metagenome_binning.smk`
+This workflow performs MAG recovery from the prokaryotic contigs.
+
+The current approach is:
+1. Filter prokaryotic contigs
+2. Rename contigs
+3. Compute coverage information with **CoverM**
+4. Run three binners:
+   - **MetaBAT2**
+   - **ComeBin**
+   - **MaxBin2**
+5. Combine and optimise bins with **Binette**
+
+The result is a set of bins/MAGs for each assembly suffix.
+
+---
+
+## Downstream summarisation workflows
+
+### 4. Metagenome-level summary: `summarise_metagenome.smk`
+This workflow summarises the metagenome assemblies themselves.
+
+It currently produces:
+- **CoverM** output for **trimmed_mean** abundance of contigs across samples
+- functional annotation using **eggNOG-mapper**
+
+This is done per assembly.
+
+### 5. MAG-level summary: `summarise_mags.smk`
+This workflow summarises the recovered MAGs.
+
+It currently performs:
+- **CheckM2** to assess completeness and contamination
+- **Galah** to dereplicate MAGs
+- **Bakta** for functional annotation
+- **CoverM** for MAG abundance across all samples
+- **GTDB-Tk** for taxonomy assignment
+
+The MAG abundance step uses the trimmed reads found under the output directory, and the MAG workflow uses all assemblies listed in the `suffixes` config entry.
+
+---
+
+## Important pipeline defaults
+
+### MEGAHIT preset
+For short-read assemblies, **MEGAHIT** currently uses the **`meta-large`** preset because this pipeline is mainly used on **soil metagenomes**.
+
+This is currently hard-coded in the Snakefile. In the future it would be better to expose this as a config parameter.
+
+### Galah dereplication threshold
+For MAG dereplication, **Galah** is currently run at **99% ANI**, i.e. approximately **strain-level dereplication**.
+
+This is also currently hard-coded and would ideally become a user-settable parameter in the future.
+
+---
+
+## Configuration
+
+At present the repository contains separate config files:
+- `config_assemble.yml`
+- `config_binning.yml`
+
+A merged config is possible and likely cleaner long term, but for now the workflows still reflect separate assembly and binning configuration.
+
+### Current assembly config example
 ```yaml
-outdir: "results"
-illumina_folder: "data/short_reads"
-nanopore_folder: "data/long_reads"   # Optional if only short reads
-cpus: 8
-trim_galore_threads: 4
-metadata: "samples_metadata.tsv"
-assembly_type: ["co", "sub", "single"]
+name: my_dataset
+illumina_folder: /data/metagenomics/raw_data/path/to/folder/with/fastqfiles
+nanopore_folder: null   # set to a folder to enable hybrid assemblies
+metadata: path/to/final_metadata.tsv
+
+assembly_type: "sub"    # can also include "co" and/or "single"
+cpus: 64
+
+# preprocessing
+trim_galore_threads: 8
 long_reads_preprocessing:
   porechop: true
-  chopper: false
-```
-| Parameter               | Explanation                                              |
-|-------------------------|---------------------------------------------------------|
-| `outdir`                | Output directory                                        |
-| `illumina_folder`       | Folder (or glob) of Illumina reads                      |
-| `nanopore_folder`       | Folder (or glob) of Nanopore reads (optional)           |
-| `cpus`                  | Total CPUs to use                                       |
-| `trim_galore_threads`   | Threads for qc/trimming                                 |
-| `metadata`              | Tab or comma-separated sample metadata                  |
-| `assembly_type`         | List: "co", "sub", "single" - which type(s) to run      |
-| `long_reads_preprocessing` | Tools to apply to long reads (booleans for each)     |
+  chopper: true
 
-**Run the workflow:**
-```sh
-snakemake --snakefile metagenome_assemble_march2026.smk --configfile config_assemble.yml --use-conda -j 8
+# output
+outdir: /data/metagenomics/processed_data/name_of_the_output_results
 ```
 
----
-
-## 🧬 2. Contig Classification (Eukaryote/Prokaryote)
-
-**File:** `metagenome_classify_march2026.smk`  
-**Purpose:** Classifies contigs in your assemblies as prokaryote or eukaryote using WhoKaryote.  
-**Inputs:**  
-- `outdir/assembly_groups.tsv` (from assembly workflow)
-- All assemblies in `outdir/assemblies/`
-- Config YAML
-
-**Output:**  
-- Table with classification results per contig
-
-**Example config (`config_classify.yml`):**
+### Current binning config example
 ```yaml
-outdir: "results"
-cpus: 4
+outdir: "/data/metagenomics/processed_data/my_results"
+suffixes: ["sub_assembly_1", "sub_assembly_2", "sub_assembly_3"]
+threads: 32
+short_reads_folder: "/data/metagenomics/processed_data/my_results/trimmed_reads/short_reads"
 ```
-| Parameter   | Explanation                           |
-|-------------|--------------------------------------|
-| `outdir`    | Directory with assemblies             |
-| `cpus`      | Number of CPUs to use                 |
 
-**Run the workflow:**
-```sh
-snakemake --snakefile metagenome_classify_march2026.smk --configfile config_classify.yml --use-conda -j 4
+### Suggested merged config example
+A merged config would make the relationship between assembly, binning, and summarisation clearer. The metadata.tsv file is used for sub-co-assemblies to specify in the column `Group` of a .tsv file which samples belong to it in the column `Sample`. e.g.
+```
+Sample	Group
+H_a_S1	H
+H_b_S2	H
+H_c_S3	H
+M_a_S4	M
+M_b_S5	M
+```
+
+
+### Notes on config cleanup
+A few config-related improvements are still needed:
+- the repository currently mixes `cpus` and `threads`; these should ideally be standardised
+- if configs are merged, all workflow references should consistently use one naming convention, preferably `threads`
+- `short_reads_folder` should ideally be derived automatically from `outdir` as:
+  - `{outdir}/trimmed_reads/short_reads`
+
+---
+
+## Running the workflows
+
+### 1. Assembly
+```bash
+snakemake --snakefile metagenome_assemble.smk --configfile config_assemble.yml --use-conda --cores 32
+```
+
+### 2. Classification
+This workflow expects the assembly outputs, especially `assembly_groups.tsv`, to already exist in the output directory.
+
+```bash
+snakemake --snakefile metagenome_classify.smk --config outdir=/path/to/results cpus=8 --use-conda --cores 32
+```
+
+### 3. Binning
+```bash
+snakemake --snakefile metagenome_binning.smk --configfile config_binning.yml --use-conda --cores 32
+```
+
+### 4. Metagenome summarisation
+```bash
+snakemake --snakefile summarise_metagenome.smk --configfile config_binning.yml --use-conda --cores 32
+```
+
+### 5. MAG summarisation
+```bash
+snakemake --snakefile summarise_mags.smk --configfile config_binning.yml --use-conda --cores 32
 ```
 
 ---
 
-## 🧱 3. Genome Binning
+## Conda environments
 
-**File:** `metagenome_binning_march2026.smk`  
-**Purpose:** Performs binning on assemblies to recover MAGs using multiple binner tools (MetaBAT2, MaxBin2, Binette, SemiBin2, Rosella, etc.).  
-**Inputs:**  
-- Assembly FASTA file  
-- Short reads directory  
-- Config YAML
+Environment YAMLs in this repository are stored in:
+- `envs/`
 
-**Output:**  
-- Binned genomes (MAGs) in output directory  
-- Quality reports
+Examples present in this branch include:
+- `envs/MACE_metagenomics.yml`
+- `envs/binette.yml`
+- `envs/binning_base.yml`
+- `envs/checkm2.yml`
+- `envs/comebin.yml`
+- `envs/coverm.yml`
+- `envs/gtdbtk-2.7.2.yml`
+- `envs/maxbin2.yml`
+- etc.
 
-**Example config (`config_binning.yml`):**
-```yaml
-outdir: "results"
-threads: 8
-assembly_path: "results/assemblies/my_sample.fa"
-suffix: "mysample"
-short_reads_folder: "results/trimmed_reads/short_reads"
-```
-| Parameter            | Explanation                                    |
-|----------------------|------------------------------------------------|
-| `outdir`             | Output directory for bins/results              |
-| `threads`            | Number of threads to use                       |
-| `assembly_path`      | FASTA file to bin                              |
-| `suffix`             | Sample or condition name                       |
-| `short_reads_folder` | Location of matched short reads                |
+So at the moment, some “envs” are actually referenced as **environment names** rather than **YAML files**.
 
-**Run the workflow:**
-```sh
-snakemake --snakefile metagenome_binning_march2026.smk --configfile config_binning.yml --use-conda -j 8
-```
+## Expected folder structure
 
----
-
-## 💡 Conda Environments
-
-All required conda environment YAMLs are found in `workflow/envs/` and are used automatically.  
-If you are running on a server/cluster, ensure conda is available and updated.
-
----
-
-## 🧷 Example Folder Structure
-
-```
+```text
 MACE_metagenomics/
-├── metagenome_assemble_march2026.smk
-├── metagenome_binning_march2026.smk
-├── metagenome_classify_march2026.smk
-├── workflow/
-│   └── envs/
-│        ├── binette.yml
-│        ├── maxbin2.yml
-│        ├── metabat2.yml
-│        ├── semibin2.yml
-│        └── ... (other envs)
+├── README.md
 ├── config_assemble.yml
-├── config_classify.yml
 ├── config_binning.yml
-└── README.md
+├── metagenome_assemble.smk
+├── metagenome_classify.smk
+├── metagenome_binning.smk
+├── summarise_metagenome.smk
+├── summarise_mags.smk
+└── envs/
+    ├── MACE_metagenomics.yml
+    ├── binette.yml
+    ├── binning_base.yml
+    ├── checkm2.yml
+    ├── comebin.yml
+    ├── coverm.yml
+    ├── gtdbtk-2.7.2.yml
+    ├── maxbin2.yml
+    ├── metabat2.yml
+    ├── semibin2.yml
+    ├── whokaryote.yml
+    └── ...
 ```
 
 ---
 
-## 🛠️ Tips & Troubleshooting
+## Notes and caveats
 
-- Use `--use-conda` to auto-create environments per rule
-- To run specific rules: `snakemake -s Snakefile -R <rulename>`
-- For clusters, adapt the snakemake command line to your scheduler (see Snakemake docs for profiles)
-- If something fails, consult the error log for missing files/typos in config
-- Always use fresh YAMLs and fastq paths—absolute paths reduce confusion!
-
----
-
-## 📣 Getting Help
-
-- For problems/feature requests, open a [GitHub issue](https://github.com/MACE-laboratory/MACE_metagenomics/issues)
-- For help understanding parameter choices, consult the comments at the top of each workflow file.
+- The classification workflow currently depends on `assembly_groups.tsv` already existing in the output directory from the assembly step.
+- Some environment references should be cleaned up so all rules consistently point to `envs/*.yml`.
+- Some parameters that are currently hard-coded in the Snakefiles would be better exposed in config files:
+  - MEGAHIT preset
+  - Galah ANI threshold
+  - database paths
+  - some thread / CPU settings
+- `short_reads_folder` should ideally not need to be manually repeated if it can be derived from `outdir`.
 
 ---
 
-Happy assembling, classifying, and binning!
+## Troubleshooting
+
+- Always use `--use-conda`
+- Check that your sample names in the metadata match the FASTQ names
+- Check that reads follow the expected naming convention:
+  - `sample_R1_001.fastq.gz`
+  - `sample_R2_001.fastq.gz`
+- Confirm that `metadata` contains the required columns, especially `Sample`, and for sub-assemblies also `Group`
+- If classification or summarisation fails, verify that upstream outputs already exist in `outdir`
+- If a rule fails because of a missing environment, check whether the workflow expects:
+  - an explicit `.yml` file in `envs/`, or
+  - a pre-existing named conda environment
+
+---
+
+## Getting help
+
+For bugs, missing environment files, or workflow improvements, please open an issue in this repository.
+
+This pipeline is still being cleaned up and documented, so issues and suggested improvements are welcome.
