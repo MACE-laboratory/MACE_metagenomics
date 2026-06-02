@@ -23,7 +23,7 @@ rule eggnog_mapper:
     output:
         ann = f"{outdir}/assemblies/{{suffix}}/genes/eggnog/{{suffix}}_prokaryotic_genes.emapper.annotations"
     conda:
-        "eggnog_blast"
+        "emapper.yml"
     threads: threads_n
     shell:
         """
