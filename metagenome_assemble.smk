@@ -447,3 +447,4 @@ EOFHEADER
             chopper_version=$(chopper --version 2>&1 | head -1) && echo "  chopper: $chopper_version" >> {output.versions} || echo "  chopper: version unknown" >> {output.versions}
         fi
         """
+
