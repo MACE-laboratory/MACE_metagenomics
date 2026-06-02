@@ -7,7 +7,6 @@ inputs:
   metadata: /data/metagenomics/raw_data/test_data/test_metadata.csv
 
 resources:
-  cpus: 64
   threads: 64
   trim_galore_threads: 8
 
@@ -19,6 +18,5 @@ assembly:
     chopper: true
 
 binning:
-  short_reads_folder: /data/metagenomics/processed_data/test_set/trimmed_reads/short_reads
   suffixes:
     - sub_assembly_Group1

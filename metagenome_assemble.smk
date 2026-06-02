@@ -183,7 +183,7 @@ rule preprocess_long_reads:
     output:
         f"{LONG_DIR}/{{sample}}_chopped.fastq.gz"
     threads:
-        RESOURCES["cpus"]
+        RESOURCES["threads"]
     log:
         "logs/preprocess_long_reads_{sample}.log"
     conda:
@@ -306,7 +306,7 @@ rule megahit:
     output:
         contigs=f"{ASSEMBLY_DIR}/{{assembly}}/final.contigs.fa"
     threads:
-        RESOURCES["cpus"]
+        RESOURCES["threads"]
     log:
         "logs/megahit_{assembly}.log"
     conda:
@@ -349,7 +349,7 @@ rule metaspades_hybrid:
     output:
         contigs=f"{ASSEMBLY_DIR}/{{assembly}}/contigs.fasta"
     threads:
-        RESOURCES["cpus"]
+        RESOURCES["threads"]
     log:
         "logs/metaspades_{assembly}.log"
     conda:
@@ -422,7 +422,7 @@ tools_versions:
     optional: true
 
 version_generation_date: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-execution_command: "snakemake metagenome_assemble_march2026.smk --use-conda --configfile test_set/config.yaml"
+execution_command: "snakemake metagenome_assemble.smk --use-conda --configfile test_set/config.yaml"
 
 EOFHEADER
 
