@@ -185,7 +185,7 @@ rule checkm2_all_bins:
         extension="fa",
     threads: 32
     conda:
-        "checkm2"
+        "envs/checkm2.yml"
     log:
         os.path.join(OUTDIR, "logs", "checkm2", "checkm2_all_bins.log")
     shell:
@@ -317,7 +317,7 @@ rule gtdbtk:
         gtdb_data="/data/databases/gtdb/release232/",
     threads: 32
     conda:
-        "gtdbtk-2.7.2"
+        "envs/gtdbtk-2.7.2.yml"
     log:
         os.path.join(OUTDIR, "logs", "gtdbtk", "gtdbtk.log")
     shell:
