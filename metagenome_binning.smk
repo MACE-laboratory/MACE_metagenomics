@@ -208,12 +208,10 @@ rule run_comebin:
 rule run_binette:
     input:
         assembly = f"{outdir}/assemblies/{{suffix}}/prokaryotic_contigs.renamed.filtered.fa",
-#        rosella = f"{outdir}/binning/{{suffix}}/rosella/rosella_bins/.done",
         maxbin2 = f"{outdir}/binning/{{suffix}}/maxbin2/maxbin2_run.summary",
         metabat2 = f"{outdir}/binning/{{suffix}}/metabat2/bins_metabat_1.fa",
         comebin = f"{outdir}/binning/{{suffix}}/comebin/comebin_res/comebin_res.tsv"
     params:
-#        rosella = f"{outdir}/binning/{{suffix}}/rosella/rosella_bins",
         metabat2 = f"{outdir}/binning/{{suffix}}/metabat2",
         maxbin2 = f"{outdir}/binning/{{suffix}}/maxbin2",
         comebin = f"{outdir}/binning/{{suffix}}/comebin/comebin_res/comebin_res_bins",
@@ -232,4 +230,3 @@ rule run_binette:
         -t {threads} \
         -o {params.out_prefix}
         """ 
-#{params.rosella}
