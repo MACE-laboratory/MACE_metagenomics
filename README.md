@@ -142,34 +142,16 @@ short_reads_folder: "/data/metagenomics/processed_data/my_results/trimmed_reads/
 ```
 
 ### Suggested merged config example
-A merged config would make the relationship between assembly, binning, and summarisation clearer. The metadata.tsv file is used for sub-co-assemblies to specify in the column `Group` of a .tsv file which samples belong to it in the column `Sample`.
-
-```yaml
-name: my_dataset
-
-# inputs
-illumina_folder: /data/metagenomics/raw_data/path/to/folder/with/fastqfiles
-nanopore_folder: null
-metadata: path/to/metadata.tsv
-
-# assembly mode
-assembly_type: ["sub"]   # choose from "co", "sub", "single"
-
-# compute
-threads: 64
-trim_galore_threads: 8
-
-# long-read preprocessing
-long_reads_preprocessing:
-  porechop: true
-  chopper: true
-
-# output
-outdir: /data/metagenomics/processed_data/name_of_the_output_results
-
-# downstream binning / MAG summary
-suffixes: [sub_assembly_1, sub_assembly_2, sub_assembly_3]
+A merged config would make the relationship between assembly, binning, and summarisation clearer. The metadata.tsv file is used for sub-co-assemblies to specify in the column `Group` of a .tsv file which samples belong to it in the column `Sample`. e.g.
 ```
+Sample	Group
+H_a_S1	H
+H_b_S2	H
+H_c_S3	H
+M_a_S4	M
+M_b_S5	M
+```
+
 
 ### Notes on config cleanup
 A few config-related improvements are still needed:
