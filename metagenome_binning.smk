@@ -200,7 +200,7 @@ rule run_comebin:
     params:
         outdir = f"{outdir}/binning/{{suffix}}/comebin"
     conda:
-        "comebin_env"
+        "envs/comebin.yml"
     threads: threads_n
     shell:
         "CUDA_VISIBLE_DEVICES='' && run_comebin.sh -a {input.assembly} -o {params.outdir} -p {input.bam_dir} -t {threads}"
