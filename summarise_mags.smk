@@ -317,7 +317,7 @@ rule gtdbtk:
         gtdb_data="/data/databases/gtdb/release232/",
     threads: 32
     conda:
-        "envs/gtdbtk-2.7.2.yml"
+        "envs/gtdbtk.yml"
     log:
         os.path.join(OUTDIR, "logs", "gtdbtk", "gtdbtk.log")
     shell:
