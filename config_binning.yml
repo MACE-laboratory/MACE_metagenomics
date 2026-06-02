@@ -1,0 +1,4 @@
+outdir: "/data/metagenomics/processed_data/my_results"
+suffixes: ["sub_assembly_1","sub_assembly_2","sub_assembly_3"]
+threads: 32
+short_reads_folder: "/data/metagenomics/processed_data/my_results/trimmed_reads/short_reads"

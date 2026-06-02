@@ -1,0 +1,16 @@
+name: my_dataset
+illumina_folder: /data/metagenomics/raw_data/path/to/folder/with/fastqfiles
+nanopore_folder: null   # set to a folder to enable hybrid assemblies
+metadata:  path/to/final_metadata.tsv
+
+assembly_type: "sub" #["co", "sub", "single"]   # choose any combination
+cpus: 64
+
+# preprocessing
+trim_galore_threads: 8
+long_reads_preprocessing:
+  porechop: true
+  chopper: true
+
+# output
+outdir: /data/metagenomics/processed_data/name_of_the_output_results
