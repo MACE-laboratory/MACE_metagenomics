@@ -62,3 +62,4 @@ rule coverm_multi:
             -m trimmed_mean \
             --output-file {output}
         """
+
