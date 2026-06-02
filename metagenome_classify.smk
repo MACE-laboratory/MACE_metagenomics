@@ -149,3 +149,4 @@ rule tools_version_log:
                 outdir = os.path.join(ASSEMBLIES_DIR, assembly, "whokaryote")
                 cmd = (f"tiara -i {contigs} -o output -t {threads}")
                 log.write(cmd + "\n")
+
