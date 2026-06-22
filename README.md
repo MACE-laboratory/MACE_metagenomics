@@ -173,7 +173,7 @@ snakemake --snakefile metagenome_assemble.smk --configfile config_assemble.yml -
 This workflow expects the assembly outputs, especially `assembly_groups.tsv`, to already exist in the output directory.
 
 ```bash
-snakemake --snakefile metagenome_classify.smk --config config_assemble.yml --use-conda --cores 32
+snakemake --snakefile metagenome_classify.smk --configfile config_assemble.yml --use-conda --cores 32
 ```
 
 ### 3. Binning
