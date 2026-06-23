@@ -5,3 +5,4 @@ channels:
   - defaults
 dependencies:
   - comebin==1.0.4
+  - mkl==2024.0
