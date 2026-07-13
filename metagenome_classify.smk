@@ -61,7 +61,7 @@ rule run_tiara:
     log: 
         os.path.join(OUTDIR, "logs/tiara_{assembly}.log")
     shell:
-        "tiara -i {input.contigs} -o {output} -t {threads}"
+        "tiara -i {input.contigs} -m {params.minsize} -o {output} -t {threads}"
 
 rule split_tiara_assignment_fasta:
     input:
